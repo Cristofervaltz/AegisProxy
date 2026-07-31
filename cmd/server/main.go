@@ -13,8 +13,12 @@ func main() {
 	// Initialize in-memory state store
 	stateStore := store.NewMemoryStore()
 
+	// Initialize Extractors (Regex + ONNX Stub)
+	regexExt := sanitizer.NewRegexExtractor()
+	onnxExt := sanitizer.NewONNXExtractor("./models/ner_model.onnx")
+
 	// Initialize the PII Masker
-	masker := sanitizer.NewMasker(stateStore)
+	masker := sanitizer.NewMasker(stateStore, regexExt, onnxExt)
 
 	// Initialize the Proxy Handler targeting OpenAI
 	targetAPI := "https://api.openai.com"
