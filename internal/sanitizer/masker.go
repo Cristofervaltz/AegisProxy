@@ -47,21 +47,34 @@ func (m *Masker) Mask(text string) string {
 		allEntities = append(allEntities, ext.Extract(sanitized)...)
 	}
 
-	uniqueMatches := make(map[string]bool)
+	var uniqueMatches []Entity
+	seen := make(map[string]bool)
 	for _, entity := range allEntities {
-		match := entity.Value
-		if !uniqueMatches[match] {
-			uniqueMatches[match] = true
-			
-			token := m.generateToken(entity.Type)
-			m.store.Set(token, match)
-			
-			// Increment metric
-			metrics.TokensMasked.WithLabelValues(entity.Type).Inc()
-			slog.Debug("Masked entity", "type", entity.Type, "token", token)
-
-			sanitized = strings.ReplaceAll(sanitized, match, token)
+		if !seen[entity.Value] {
+			seen[entity.Value] = true
+			uniqueMatches = append(uniqueMatches, entity)
 		}
+	}
+
+	// Sort matches by length descending to prevent partial overlaps
+	// (e.g. replacing a subset of an API key with a PHONE token)
+	for i := 0; i < len(uniqueMatches)-1; i++ {
+		for j := i + 1; j < len(uniqueMatches); j++ {
+			if len(uniqueMatches[i].Value) < len(uniqueMatches[j].Value) {
+				uniqueMatches[i], uniqueMatches[j] = uniqueMatches[j], uniqueMatches[i]
+			}
+		}
+	}
+
+	for _, entity := range uniqueMatches {
+		match := entity.Value
+		token := m.generateToken(entity.Type)
+		m.store.Set(token, match)
+		
+		metrics.TokensMasked.WithLabelValues(entity.Type).Inc()
+		slog.Debug("Masked entity", "type", entity.Type, "token", token)
+
+		sanitized = strings.ReplaceAll(sanitized, match, token)
 	}
 
 	return sanitized

@@ -38,8 +38,9 @@ func TestProxyHandler(t *testing.T) {
 			Model:   "gpt-3.5-turbo-0301",
 			Choices: []struct {
 				Index        int         `json:"index"`
-				Message      ChatMessage `json:"message"`
-				FinishReason string      `json:"finish_reason"`
+				Message      ChatMessage `json:"message,omitempty"`
+				Delta        ChatMessage `json:"delta,omitempty"`
+				FinishReason string      `json:"finish_reason,omitempty"`
 			}{
 				{
 					Index: 0,
