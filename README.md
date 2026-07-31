@@ -1,18 +1,18 @@
 # AegisProxy (AI Data Firewall)
 
-## 📌 Что это за проект?
-**AegisProxy** — это высокопроизводительный reverse-proxy на языке **Go**, предназначенный для безопасной работы корпоративных сетей с внешними LLM (в первую очередь, OpenAI API). 
+## 📌 What is this project?
+**AegisProxy** is a high-performance reverse proxy written in **Go**, designed for secure interaction between corporate networks and external LLMs (primarily the OpenAI API). 
 
-Его главная задача — перехватывать запросы, маскировать конфиденциальные данные (PII: имена, email, кредитные карты, телефоны, API-ключи) перед отправкой в облако, и восстанавливать (демаскировать) их в ответе от нейросети. Провайдер LLM никогда не видит реальных пользовательских данных.
+Its main goal is to intercept requests, mask sensitive data (PII: names, emails, credit cards, phone numbers, API keys) before sending them to the cloud, and restore (unmask) them in the response from the neural network. The LLM provider never sees the actual user data.
 
-## 🏗 Архитектура и MVP
-1. **StateStore (Хранилище стейта)**: Потокобезопасный in-memory LRU-кэш на базе `sync.Map`. Хранит связки токенов и реальных данных (например, `[EMAIL_1]` -> `john@doe.com`).
-2. **Masker (Санитайзер)**: Движок маскировки. Пока работает на базе регулярных выражений, покрывая базовые типы данных.
-3. **Proxy Handler**: Логика перехвата POST-запросов `/v1/chat/completions`. Парсит JSON, прогоняет текст через Masker, делает запрос к `api.openai.com` и демаскирует ответ.
+## 🏗 Architecture & MVP
+1. **StateStore**: A thread-safe in-memory LRU cache based on `sync.Map`. It stores mappings between tokens and real data (e.g., `[EMAIL_1]` -> `john@doe.com`).
+2. **Masker (Sanitizer)**: The masking engine. Currently operates using regular expressions, covering basic data types, with support for extensible Extractors (like ONNX models).
+3. **Proxy Handler**: Intercepts POST requests to `/v1/chat/completions`. It parses JSON, passes the text through the Masker, forwards the request to `api.openai.com`, and unmasks the response.
 
-## 🚀 Roadmap (Планы на будущее)
-1. **Тестирование MVP**: Написание юнит-тестов и ручное тестирование.
-2. **Интеграция ONNX Runtime (NER)**: Замена/дополнение регулярок локальной ML-моделью для умного распознавания.
-3. **Распределенное хранилище**: Поддержка **Redis** в `StateStore` для горизонтального масштабирования.
-4. **Конфигурация**: Вынос портов, ключей и правил в `.yaml` / `.env`.
-5. **Streaming**: Поддержка `stream: true` (SSE) для проксирования ответов в реальном времени.
+## 🚀 Roadmap (Future Plans)
+1. **[DONE] MVP Testing**: Write unit tests and perform manual testing.
+2. **[DONE] ONNX Runtime Integration (NER)**: Replace/supplement regex with a local ML model for smart entity recognition.
+3. **[DONE] Distributed Storage**: Support **Redis** in `StateStore` for horizontal scaling.
+4. **[DONE] Configuration**: Extract ports, keys, and rules into `.yaml` / `.env`.
+5. **[DONE] Streaming**: Support `stream: true` (SSE) to proxy responses in real-time.

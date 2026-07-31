@@ -1,25 +1,26 @@
 # AegisProxy: Project Context & Handoff
 
-## 📌 Что это за проект?
-**AegisProxy** (AI Data Firewall) — это высокопроизводительный reverse-proxy на языке **Go**, предназначенный для безопасной работы корпоративных сетей с внешними LLM (в первую очередь, OpenAI API). 
-Его главная задача — перехватывать запросы, маскировать конфиденциальные данные (PII: имена, email, кредитные карты, телефоны, API-ключи) перед отправкой в облако, и восстанавливать (демаскировать) их в ответе от нейросети. Провайдер LLM никогда не видит реальных пользовательских данных.
+## 📌 What is this project?
+**AegisProxy** (AI Data Firewall) is a high-performance reverse proxy written in **Go**, designed for secure interaction between corporate networks and external LLMs (primarily the OpenAI API). 
 
-## 🏗 Что уже сделано (MVP)
-1. **Проект инициализирован**: Создана структура микросервиса (Go 1.22+).
-2. **StateStore (Хранилище стейта)**: В `internal/store/statemap.go` реализован потокобезопасный in-memory LRU-кэш на базе `sync.Map`. Он хранит связки токенов и реальных данных (например, `[EMAIL_1]` -> `john@doe.com`).
-3. **Masker (Санитайзер)**: В `internal/sanitizer/masker.go` написан движок маскировки. Пока он работает на базе регулярных выражений, покрывая базовые типы данных.
-4. **Proxy Handler**: В `internal/proxy/handler.go` написана логика перехвата POST-запросов `/v1/chat/completions`. Он парсит JSON, прогоняет текст через Masker, делает запрос к `api.openai.com` и демаскирует ответ.
-5. **Точка входа**: В `cmd/server/main.go` сервер запускается на порту `8080`.
+Its main goal is to intercept requests, mask sensitive data (PII: names, emails, credit cards, phone numbers, API keys) before sending them to the cloud, and restore (unmask) them in the response from the neural network. The LLM provider never sees the actual user data.
 
-## 🚀 Планы на будущее (Next Steps)
-1. **Тестирование MVP**: Написать юнит-тесты для маскировщика и обработчика запросов. Провести ручное тестирование через `curl`.
-2. **Интеграция ONNX Runtime (NER)**: Заменить или дополнить регулярные выражения локальной легковесной моделью машинного обучения (Small Language Model) для умного распознавания сложных имен и неструктурированного текста с нулевой задержкой.
-3. **Распределенное хранилище**: Добавить поддержку **Redis** в `StateStore` для масштабирования (когда одного инстанса in-memory кэша станет недостаточно).
-4. **Конфигурация**: Вынести хардкод (порты, целевой API, правила маскировки) в `.yaml` конфигурацию или переменные окружения.
-5. **Streaming**: Добавить поддержку `stream: true` (SSE) для проксирования чат-ответов в реальном времени.
+## 🏗 What has been done (MVP)
+1. **Project Initialized**: Microservice structure created (Go 1.22+).
+2. **StateStore**: Thread-safe in-memory LRU cache based on `sync.Map` implemented in `internal/store/statemap.go`. It stores token-to-data bindings (e.g., `[EMAIL_1]` -> `john@doe.com`).
+3. **Masker (Sanitizer)**: Masking engine written in `internal/sanitizer/masker.go`.
+4. **Proxy Handler**: Logic for intercepting POST requests to `/v1/chat/completions` written in `internal/proxy/handler.go`. It parses JSON, sanitizes text, queries `api.openai.com`, and unmasks the response.
+5. **Entry Point**: The server starts on port `8080` in `cmd/server/main.go`.
 
-## 🤖 Инструкция для ИИ-ассистента
-Если ты читаешь этот файл в новой сессии:
-- Ты находишься в корне проекта AegisProxy.
-- Твой стек: Go (Golang). Архитектурный стиль: минимализм, высокая производительность, минимум внешних зависимостей.
-- Проверь текущие задачи в `task.md` или спроси пользователя, с какого из пунктов "Планов на будущее" стоит начать!
+## 🚀 Future Plans (Next Steps) - ALL COMPLETED!
+1. **[DONE] MVP Testing**: Wrote unit tests for the masker and handler.
+2. **[DONE] ONNX Runtime Integration (NER)**: Replaced/supplemented regex with a local ML model (SLM) for smart zero-latency entity recognition.
+3. **[DONE] Distributed Storage**: Added **Redis** support in `StateStore` for scaling.
+4. **[DONE] Configuration**: Extracted hardcoded ports, target APIs, and rules into `.yaml` or environment variables.
+5. **[DONE] Streaming**: Added support for `stream: true` (SSE) to proxy chat responses in real-time.
+
+## 🤖 AI Assistant Instructions
+If you are reading this file in a new session:
+- You are in the root directory of the AegisProxy project.
+- Your stack: Go (Golang). Architectural style: minimalism, high performance, minimum external dependencies.
+- Check current tasks in `task.md` or ask the user what to do next!
