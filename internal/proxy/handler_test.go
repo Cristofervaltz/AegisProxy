@@ -56,7 +56,7 @@ func TestProxyHandler(t *testing.T) {
 
 		respBytes, _ := json.Marshal(mockResp)
 		w.WriteHeader(http.StatusOK)
-		w.Write(respBytes)
+		_, _ = w.Write(respBytes)
 	}))
 	defer targetServer.Close()
 
@@ -96,7 +96,7 @@ func TestProxyHandler(t *testing.T) {
 // Helper to extract the token generated in the test
 func extractToken(body string) string {
 	var req ChatRequest
-	json.Unmarshal([]byte(body), &req)
+	_ = json.Unmarshal([]byte(body), &req)
 	words := strings.Split(req.Messages[0].Content, " ")
 	return words[len(words)-1] // It's at the end "Hi, my email is [EMAIL_1]."
 }
