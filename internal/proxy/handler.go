@@ -8,7 +8,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+	"log/slog"
 
+	"github.com/aegisproxy/core/internal/metrics"
 	"github.com/aegisproxy/core/internal/sanitizer"
 )
 
@@ -55,13 +58,23 @@ type ChatResponse struct {
 
 // ServeHTTP implements the http.Handler interface
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	status := "200"
+	defer func() {
+		duration := time.Since(start).Seconds()
+		metrics.RequestsTotal.WithLabelValues(status).Inc()
+		metrics.RequestDuration.WithLabelValues(status).Observe(duration)
+	}()
+
 	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+		status = "404"
 		http.Error(w, "Only POST /v1/chat/completions is supported", http.StatusNotFound)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		status = "400"
 		http.Error(w, "Failed to read request", http.StatusBadRequest)
 		return
 	}
@@ -69,20 +82,20 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var reqPayload ChatRequest
 	if err := json.Unmarshal(body, &reqPayload); err != nil {
+		status = "400"
 		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
 		return
 	}
 
-	// 1. Mask Request
 	for i, msg := range reqPayload.Messages {
 		reqPayload.Messages[i].Content = h.masker.Mask(msg.Content)
 	}
 
 	maskedBody, _ := json.Marshal(reqPayload)
 
-	// 2. Forward Request
 	proxyReq, err := http.NewRequest(r.Method, h.target+r.URL.Path, bytes.NewBuffer(maskedBody))
 	if err != nil {
+		status = "500"
 		http.Error(w, "Failed to create proxy request", http.StatusInternalServerError)
 		return
 	}
@@ -93,23 +106,24 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	proxyReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(maskedBody)))
-	proxyReq.Header.Del("Accept-Encoding") // Prevent gzip
+	proxyReq.Header.Del("Accept-Encoding")
 
 	client := &http.Client{}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
+		status = "502"
 		http.Error(w, "Failed to reach target", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Handle Streaming
+	status = fmt.Sprintf("%d", resp.StatusCode)
+
 	if reqPayload.Stream {
 		h.handleStreamResponse(w, resp)
 		return
 	}
 
-	// Handle Normal (Non-streaming) Response
 	h.handleNormalResponse(w, resp)
 }
 
@@ -142,7 +156,6 @@ func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Re
 		return
 	}
 
-	// Copy headers
 	for k, vv := range resp.Header {
 		for _, v := range vv {
 			w.Header().Add(k, v)
@@ -155,7 +168,7 @@ func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Re
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("Error reading stream:", err)
+				slog.Error("Error reading stream", "error", err)
 			}
 			break
 		}
@@ -170,7 +183,6 @@ func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Re
 
 			var chunk ChatResponse
 			if err := json.Unmarshal([]byte(data), &chunk); err == nil {
-				// Unmask delta content
 				for i, choice := range chunk.Choices {
 					if choice.Delta.Content != "" {
 						chunk.Choices[i].Delta.Content = h.masker.Unmask(choice.Delta.Content)
@@ -183,7 +195,6 @@ func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Re
 			}
 		}
 
-		// Write unparsed or empty lines as is
 		fmt.Fprint(w, line)
 		flusher.Flush()
 	}

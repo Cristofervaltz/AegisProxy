@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"log/slog"
 
+	"github.com/aegisproxy/core/internal/metrics"
 	"github.com/aegisproxy/core/internal/store"
 )
 
@@ -20,7 +22,6 @@ type Masker struct {
 // NewMasker creates a new Masker instance with given extractors
 func NewMasker(s store.StateStore, extractors ...Extractor) *Masker {
 	if len(extractors) == 0 {
-		// Default fallback
 		extractors = []Extractor{NewRegexExtractor()}
 	}
 	return &Masker{
@@ -41,13 +42,11 @@ func (m *Masker) generateToken(tokenType string) string {
 func (m *Masker) Mask(text string) string {
 	sanitized := text
 	
-	// Collect entities from all extractors
 	var allEntities []Entity
 	for _, ext := range m.extractors {
 		allEntities = append(allEntities, ext.Extract(sanitized)...)
 	}
 
-	// Deduplicate matches to replace same PII with same token
 	uniqueMatches := make(map[string]bool)
 	for _, entity := range allEntities {
 		match := entity.Value
@@ -55,9 +54,12 @@ func (m *Masker) Mask(text string) string {
 			uniqueMatches[match] = true
 			
 			token := m.generateToken(entity.Type)
-			m.store.Set(token, match) // Store mapping
+			m.store.Set(token, match)
 			
-			// Replace all occurrences of this specific match with the generated token
+			// Increment metric
+			metrics.TokensMasked.WithLabelValues(entity.Type).Inc()
+			slog.Debug("Masked entity", "type", entity.Type, "token", token)
+
 			sanitized = strings.ReplaceAll(sanitized, match, token)
 		}
 	}

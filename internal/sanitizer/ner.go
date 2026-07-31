@@ -1,6 +1,9 @@
 package sanitizer
 
-import "regexp"
+import (
+	"regexp"
+	"sync"
+)
 
 // Entity represents a detected PII entity in text
 type Entity struct {
@@ -13,21 +16,21 @@ type Extractor interface {
 	Extract(text string) []Entity
 }
 
+type regexRule struct {
+	Type    string
+	Pattern *regexp.Regexp
+}
+
 // RegexExtractor uses regular expressions to find basic PII
 type RegexExtractor struct {
-	rules []struct {
-		Type    string
-		Pattern *regexp.Regexp
-	}
+	rules []regexRule
+	mu    sync.RWMutex
 }
 
 // NewRegexExtractor creates a RegexExtractor with default rules
 func NewRegexExtractor() *RegexExtractor {
 	return &RegexExtractor{
-		rules: []struct {
-			Type    string
-			Pattern *regexp.Regexp
-		}{
+		rules: []regexRule{
 			{Type: "EMAIL", Pattern: regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)},
 			{Type: "CREDIT_CARD", Pattern: regexp.MustCompile(`\b(?:\d[ -]*?){13,16}\b`)},
 			{Type: "PHONE", Pattern: regexp.MustCompile(`\+?[0-9][0-9\- \(\)]{7,14}[0-9]`)},
@@ -36,7 +39,36 @@ func NewRegexExtractor() *RegexExtractor {
 	}
 }
 
+// AddRule allows dynamic addition of new masking rules
+func (r *RegexExtractor) AddRule(ruleType, pattern string) error {
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rules = append(r.rules, regexRule{Type: ruleType, Pattern: compiled})
+	return nil
+}
+
+// GetRules returns a list of current rule types and patterns
+func (r *RegexExtractor) GetRules() []map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []map[string]string
+	for _, rule := range r.rules {
+		out = append(out, map[string]string{
+			"type":    rule.Type,
+			"pattern": rule.Pattern.String(),
+		})
+	}
+	return out
+}
+
 func (r *RegexExtractor) Extract(text string) []Entity {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	
 	var entities []Entity
 	for _, rule := range r.rules {
 		matches := rule.Pattern.FindAllString(text, -1)
@@ -48,10 +80,8 @@ func (r *RegexExtractor) Extract(text string) []Entity {
 }
 
 // ONNXExtractor is a placeholder for a local Small Language Model (SLM) NER
-// that uses ONNX Runtime for zero-latency unstructured text parsing.
 type ONNXExtractor struct {
 	modelPath string
-	// placeholder for ONNX session/model
 }
 
 func NewONNXExtractor(modelPath string) *ONNXExtractor {
@@ -61,8 +91,5 @@ func NewONNXExtractor(modelPath string) *ONNXExtractor {
 }
 
 func (o *ONNXExtractor) Extract(text string) []Entity {
-	// TODO: Implement actual ONNX inference here.
-	// For MVP, we simulate returning nothing or mock data
-	// Example: tokenize text -> feed to ONNX model -> parse logits -> return Entities
 	return nil
 }
