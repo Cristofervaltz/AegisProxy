@@ -39,7 +39,7 @@ func (s *AdminServer) handleRules(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		rules := s.regexExt.GetRules()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(rules)
+		_ = json.NewEncoder(w).Encode(rules)
 		return
 	}
 
@@ -132,5 +132,5 @@ func (s *AdminServer) handleUI(w http.ResponseWriter, r *http.Request) {
 </html>`
 	
 	t, _ := template.New("ui").Parse(tmpl)
-	t.Execute(w, nil)
+	_ = t.Execute(w, nil)
 }

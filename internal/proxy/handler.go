@@ -91,7 +91,12 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqPayload.Messages[i].Content = h.masker.Mask(msg.Content)
 	}
 
-	maskedBody, _ := json.Marshal(reqPayload)
+	maskedBody, err := json.Marshal(reqPayload)
+	if err != nil {
+		status = "500"
+		http.Error(w, "Failed to marshal request", http.StatusInternalServerError)
+		return
+	}
 
 	proxyReq, err := http.NewRequest(r.Method, h.target+r.URL.Path, bytes.NewBuffer(maskedBody))
 	if err != nil {
@@ -135,8 +140,10 @@ func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Re
 			for i, choice := range respPayload.Choices {
 				respPayload.Choices[i].Message.Content = h.masker.Unmask(choice.Message.Content)
 			}
-			unmaskedBody, _ := json.Marshal(respPayload)
-			respBody = unmaskedBody
+			unmaskedBody, err := json.Marshal(respPayload)
+			if err == nil {
+				respBody = unmaskedBody
+			}
 		}
 	}
 	for k, vv := range resp.Header {
@@ -146,7 +153,7 @@ func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Re
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(respBody)))
 	w.WriteHeader(resp.StatusCode)
-	w.Write(respBody)
+	_, _ = w.Write(respBody)
 }
 
 func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Response) {
@@ -188,9 +195,11 @@ func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Re
 						chunk.Choices[i].Delta.Content = h.masker.Unmask(choice.Delta.Content)
 					}
 				}
-				unmaskedData, _ := json.Marshal(chunk)
-				fmt.Fprintf(w, "data: %s\n\n", string(unmaskedData))
-				flusher.Flush()
+				unmaskedData, err := json.Marshal(chunk)
+				if err == nil {
+					fmt.Fprintf(w, "data: %s\n\n", string(unmaskedData))
+					flusher.Flush()
+				}
 				continue
 			}
 		}
