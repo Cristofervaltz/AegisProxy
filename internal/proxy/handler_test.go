@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/aegisproxy/core/internal/audit"
-	"github.com/aegisproxy/core/internal/sanitizer"
 	"github.com/aegisproxy/core/internal/providers"
+	"github.com/aegisproxy/core/internal/sanitizer"
 	"github.com/aegisproxy/core/internal/store"
 )
 
@@ -137,6 +137,7 @@ func (m *MockAuditLogger) LogEvent(event audit.AuditEvent) error {
 	m.LastEvent = &event
 	return nil
 }
+
 type ChatMessage struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content,omitempty"`

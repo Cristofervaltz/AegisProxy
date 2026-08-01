@@ -81,7 +81,7 @@ func (a *GeminiAdapter) MaskRequest(body []byte, masker *sanitizer.Masker) ([]by
 	}
 
 	maskedBody, err := json.Marshal(reqPayload)
-	// Gemini models are usually in the URL path. 
+	// Gemini models are usually in the URL path.
 	// We'll return "gemini" as model name for now, or extract from path if needed.
 	isStream := strings.Contains(string(body), "streamGenerateContent")
 	return maskedBody, "gemini", isStream, err

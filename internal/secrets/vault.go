@@ -60,14 +60,14 @@ func NewVaultManager(addr, token, secretPath string) (*VaultManager, error) {
 // GetKeys retrieves all API keys from Vault
 func (v *VaultManager) GetKeys(ctx context.Context) (map[string]string, error) {
 	keys := make(map[string]string)
-	
+
 	secret, err := v.client.KVv2("secret").Get(ctx, v.secretPath)
 	if err != nil {
 		s, fallbackErr := v.client.Logical().Read(v.secretPath)
 		if fallbackErr != nil || s == nil {
 			return nil, fmt.Errorf("failed to read secret from vault: %v (fallback error: %v)", err, fallbackErr)
 		}
-		
+
 		for k, val := range s.Data {
 			if strVal, ok := val.(string); ok {
 				keys[k] = strVal
