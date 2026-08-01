@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-	"log/slog"
 
 	"github.com/aegisproxy/core/internal/metrics"
 	"github.com/aegisproxy/core/internal/sanitizer"

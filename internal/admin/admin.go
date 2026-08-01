@@ -23,7 +23,7 @@ func NewAdminServer(regexExt *sanitizer.RegexExtractor) *AdminServer {
 
 func (s *AdminServer) Start(port string) {
 	mux := http.NewServeMux()
-	
+
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/api/rules", s.handleRules)
 	mux.HandleFunc("/", s.handleUI)
@@ -52,17 +52,17 @@ func (s *AdminServer) handleRules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		
+
 		if err := s.regexExt.AddRule(req.Type, req.Pattern); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		
+
 		slog.Info("Added new rule via Admin UI", "type", req.Type)
 		w.WriteHeader(http.StatusCreated)
 		return
 	}
-	
+
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
@@ -130,7 +130,7 @@ func (s *AdminServer) handleUI(w http.ResponseWriter, r *http.Request) {
 	</script>
 </body>
 </html>`
-	
+
 	t, _ := template.New("ui").Parse(tmpl)
 	_ = t.Execute(w, nil)
 }

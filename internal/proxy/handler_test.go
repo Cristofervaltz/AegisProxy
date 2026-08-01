@@ -45,7 +45,7 @@ func TestProxyHandler(t *testing.T) {
 				{
 					Index: 0,
 					Message: ChatMessage{
-						Role:    "assistant",
+						Role: "assistant",
 						// The bot repeats the token, we expect the proxy to unmask it
 						Content: "Hello, your email is " + extractToken(bodyStr) + ".",
 					},

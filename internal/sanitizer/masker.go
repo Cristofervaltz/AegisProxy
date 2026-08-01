@@ -2,10 +2,10 @@ package sanitizer
 
 import (
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
-	"log/slog"
 
 	"github.com/aegisproxy/core/internal/metrics"
 	"github.com/aegisproxy/core/internal/store"
@@ -41,7 +41,7 @@ func (m *Masker) generateToken(tokenType string) string {
 // Mask finds PII in the input text, stores it, and returns the sanitized text
 func (m *Masker) Mask(text string) string {
 	sanitized := text
-	
+
 	var allEntities []Entity
 	for _, ext := range m.extractors {
 		allEntities = append(allEntities, ext.Extract(sanitized)...)
@@ -70,7 +70,7 @@ func (m *Masker) Mask(text string) string {
 		match := entity.Value
 		token := m.generateToken(entity.Type)
 		m.store.Set(token, match)
-		
+
 		metrics.TokensMasked.WithLabelValues(entity.Type).Inc()
 		slog.Debug("Masked entity", "type", entity.Type, "token", token)
 
@@ -85,7 +85,7 @@ func (m *Masker) Unmask(text string) string {
 	tokenPattern := regexp.MustCompile(`\[[A-Z_]+_\d+\]`)
 	unmasked := text
 	tokens := tokenPattern.FindAllString(unmasked, -1)
-	
+
 	uniqueTokens := make(map[string]bool)
 	for _, token := range tokens {
 		if !uniqueTokens[token] {

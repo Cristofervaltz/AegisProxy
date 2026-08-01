@@ -32,7 +32,7 @@ func NewONNXExtractor(modelPath string) (*ONNXExtractor, error) {
 		ModelPath: modelPath,
 		Name:      "ner",
 	}
-	
+
 	// Create token classification pipeline
 	pipe, err := hugot.NewPipeline(session, config)
 	if err != nil {
@@ -50,7 +50,7 @@ func (o *ONNXExtractor) Extract(text string) []Entity {
 	if o.pipeline == nil {
 		return nil
 	}
-	
+
 	res, err := o.pipeline.RunPipeline(context.Background(), []string{text})
 	if err != nil || len(res.Entities) == 0 {
 		return nil
@@ -63,7 +63,7 @@ func (o *ONNXExtractor) Extract(text string) []Entity {
 		if len(label) > 2 && (label[:2] == "B-" || label[:2] == "I-") {
 			label = label[2:]
 		}
-		
+
 		// For MVP, we filter only typical PII labels like PER (Person), ORG (Organization), LOC (Location)
 		if label == "PER" || label == "ORG" || label == "LOC" {
 			entities = append(entities, Entity{

@@ -68,7 +68,7 @@ func (r *RegexExtractor) GetRules() []map[string]string {
 func (r *RegexExtractor) Extract(text string) []Entity {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	var entities []Entity
 	for _, rule := range r.rules {
 		matches := rule.Pattern.FindAllString(text, -1)
@@ -78,5 +78,3 @@ func (r *RegexExtractor) Extract(text string) []Entity {
 	}
 	return entities
 }
-
-

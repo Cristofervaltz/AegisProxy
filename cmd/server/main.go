@@ -12,8 +12,8 @@ import (
 	"github.com/aegisproxy/core/internal/sanitizer"
 	"github.com/aegisproxy/core/internal/store"
 
-	"github.com/knights-analytics/hugot"
 	"context"
+	"github.com/knights-analytics/hugot"
 )
 
 func main() {
@@ -35,7 +35,7 @@ func main() {
 
 	// Initialize Extractors
 	regexExt := sanitizer.NewRegexExtractor()
-	
+
 	var extractors []sanitizer.Extractor
 	extractors = append(extractors, regexExt)
 
@@ -73,7 +73,7 @@ func main() {
 	http.Handle("/", proxyHandler)
 
 	slog.Info("AegisProxy is starting", "port", cfg.Port, "target", cfg.TargetAPI)
-	
+
 	if err := http.ListenAndServe(cfg.Port, nil); err != nil {
 		slog.Error("Server failed to start", "error", err)
 		os.Exit(1)

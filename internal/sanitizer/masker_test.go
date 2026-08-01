@@ -1,9 +1,9 @@
 package sanitizer
 
 import (
+	"github.com/aegisproxy/core/internal/store"
 	"strings"
 	"testing"
-	"github.com/aegisproxy/core/internal/store"
 )
 
 func TestMasker(t *testing.T) {

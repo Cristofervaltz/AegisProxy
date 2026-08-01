@@ -22,7 +22,7 @@ func TestONNXExtractor(t *testing.T) {
 
 	// We expect PER (John Doe), ORG (Google), LOC (New York)
 	// Because tokens might be split into subwords, we just check if any PER, ORG, LOC was found
-	
+
 	foundPER := false
 	foundORG := false
 	foundLOC := false
