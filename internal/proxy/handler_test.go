@@ -12,6 +12,7 @@ import (
 
 	"github.com/aegisproxy/core/internal/audit"
 	"github.com/aegisproxy/core/internal/sanitizer"
+	"github.com/aegisproxy/core/internal/providers"
 	"github.com/aegisproxy/core/internal/store"
 )
 
@@ -68,7 +69,13 @@ func TestProxyHandler(t *testing.T) {
 	defer targetServer.Close()
 
 	mockLogger := &MockAuditLogger{}
-	handler := NewProxyHandler(masker, targetServer.URL, "super_secure_mock_key", mockLogger)
+	handler := NewProxyHandler(masker, map[string]string{"OPENAI_API_KEY": "super_secure_mock_key"}, mockLogger)
+
+	for _, a := range handler.adapters {
+		if a.Name() == "openai" {
+			a.(*providers.OpenAIAdapter).SetBaseURL(targetServer.URL)
+		}
+	}
 
 	reqPayload := ChatRequest{
 		Model: "gpt-3.5-turbo",
@@ -129,4 +136,30 @@ type MockAuditLogger struct {
 func (m *MockAuditLogger) LogEvent(event audit.AuditEvent) error {
 	m.LastEvent = &event
 	return nil
+}
+type ChatMessage struct {
+	Role    string `json:"role,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+type ChatRequest struct {
+	Model    string        `json:"model"`
+	Messages []ChatMessage `json:"messages"`
+	Stream   bool          `json:"stream,omitempty"`
+}
+type ChatResponse struct {
+	Id      string `json:"id"`
+	Object  string `json:"object"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index        int         `json:"index"`
+		Message      ChatMessage `json:"message,omitempty"`
+		Delta        ChatMessage `json:"delta,omitempty"`
+		FinishReason string      `json:"finish_reason,omitempty"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
 }

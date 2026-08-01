@@ -10,23 +10,26 @@ import (
 
 // Manager defines how to fetch secure keys
 type Manager interface {
-	GetOpenAIKey(ctx context.Context) (string, error)
+	GetKeys(ctx context.Context) (map[string]string, error)
 }
 
 // EnvManager implements Manager using environment variables
 type EnvManager struct {
-	key string
+	keys map[string]string
 }
 
-func NewEnvManager(key string) *EnvManager {
-	return &EnvManager{key: key}
-}
-
-func (e *EnvManager) GetOpenAIKey(ctx context.Context) (string, error) {
-	if e.key == "" {
-		return "", fmt.Errorf("api key not set in environment")
+func NewEnvManager(openai, anthropic, gemini string) *EnvManager {
+	return &EnvManager{
+		keys: map[string]string{
+			"OPENAI_API_KEY":    openai,
+			"ANTHROPIC_API_KEY": anthropic,
+			"GEMINI_API_KEY":    gemini,
+		},
 	}
-	return e.key, nil
+}
+
+func (e *EnvManager) GetKeys(ctx context.Context) (map[string]string, error) {
+	return e.keys, nil
 }
 
 // VaultManager implements Manager using HashiCorp Vault
@@ -54,28 +57,33 @@ func NewVaultManager(addr, token, secretPath string) (*VaultManager, error) {
 	}, nil
 }
 
-// GetOpenAIKey retrieves the OpenAI API key from Vault
-func (v *VaultManager) GetOpenAIKey(ctx context.Context) (string, error) {
-	secret, err := v.client.KVv2("secret").Get(ctx, v.secretPath) // KVv2 is standard for newer Vault
+// GetKeys retrieves all API keys from Vault
+func (v *VaultManager) GetKeys(ctx context.Context) (map[string]string, error) {
+	keys := make(map[string]string)
+	
+	secret, err := v.client.KVv2("secret").Get(ctx, v.secretPath)
 	if err != nil {
-		// Try fallback to standard Read if KVv2 helper fails (e.g., using KVv1)
 		s, fallbackErr := v.client.Logical().Read(v.secretPath)
 		if fallbackErr != nil || s == nil {
-			return "", fmt.Errorf("failed to read secret from vault: %v (fallback error: %v)", err, fallbackErr)
+			return nil, fmt.Errorf("failed to read secret from vault: %v (fallback error: %v)", err, fallbackErr)
 		}
-
-		data := s.Data
-		if key, ok := data["api_key"].(string); ok {
-			return key, nil
+		
+		for k, val := range s.Data {
+			if strVal, ok := val.(string); ok {
+				keys[k] = strVal
+			}
 		}
-		return "", fmt.Errorf("api_key not found in secret data")
+		return keys, nil
 	}
 
 	if secret != nil && secret.Data != nil {
-		if key, ok := secret.Data["api_key"].(string); ok {
-			return key, nil
+		for k, val := range secret.Data {
+			if strVal, ok := val.(string); ok {
+				keys[k] = strVal
+			}
 		}
+		return keys, nil
 	}
 
-	return "", fmt.Errorf("api_key not found in secret data")
+	return keys, nil
 }

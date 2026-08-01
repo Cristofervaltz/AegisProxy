@@ -1,9 +1,7 @@
 package proxy
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,57 +12,30 @@ import (
 
 	"github.com/aegisproxy/core/internal/audit"
 	"github.com/aegisproxy/core/internal/metrics"
+	"github.com/aegisproxy/core/internal/providers"
 	"github.com/aegisproxy/core/internal/sanitizer"
 )
 
-// ProxyHandler intercepts and sanitizes OpenAI API requests
+// ProxyHandler intercepts and sanitizes API requests for multiple LLM providers
 type ProxyHandler struct {
-	masker       *sanitizer.Masker
-	target       string
-	secureAPIKey string
-	auditLogger  audit.Logger
+	masker      *sanitizer.Masker
+	secureKeys  map[string]string
+	auditLogger audit.Logger
+	adapters    []providers.Adapter
 }
 
 // NewProxyHandler creates a new ProxyHandler
-func NewProxyHandler(m *sanitizer.Masker, target string, secureKey string, auditLogger audit.Logger) *ProxyHandler {
+func NewProxyHandler(m *sanitizer.Masker, secureKeys map[string]string, auditLogger audit.Logger) *ProxyHandler {
 	return &ProxyHandler{
-		masker:       m,
-		target:       target,
-		secureAPIKey: secureKey,
-		auditLogger:  auditLogger,
+		masker:      m,
+		secureKeys:  secureKeys,
+		auditLogger: auditLogger,
+		adapters: []providers.Adapter{
+			&providers.OpenAIAdapter{},
+			&providers.AnthropicAdapter{},
+			&providers.GeminiAdapter{},
+		},
 	}
-}
-
-// ChatMessage represents the OpenAI chat message
-type ChatMessage struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
-}
-
-// ChatRequest represents the incoming OpenAI request
-type ChatRequest struct {
-	Model    string        `json:"model"`
-	Messages []ChatMessage `json:"messages"`
-	Stream   bool          `json:"stream,omitempty"`
-}
-
-// ChatResponse represents the OpenAI API response
-type ChatResponse struct {
-	Id      string `json:"id"`
-	Object  string `json:"object"`
-	Created int    `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index        int         `json:"index"`
-		Message      ChatMessage `json:"message,omitempty"`
-		Delta        ChatMessage `json:"delta,omitempty"`
-		FinishReason string      `json:"finish_reason,omitempty"`
-	} `json:"choices"`
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage,omitempty"`
 }
 
 // ServeHTTP implements the http.Handler interface
@@ -77,9 +48,17 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		metrics.RequestDuration.WithLabelValues(status).Observe(duration)
 	}()
 
-	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+	var adapter providers.Adapter
+	for _, a := range h.adapters {
+		if a.IsMatch(r) {
+			adapter = a
+			break
+		}
+	}
+
+	if adapter == nil {
 		status = "404"
-		http.Error(w, "Only POST /v1/chat/completions is supported", http.StatusNotFound)
+		http.Error(w, "Unsupported API endpoint", http.StatusNotFound)
 		return
 	}
 
@@ -91,25 +70,15 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var reqPayload ChatRequest
-	if err := json.Unmarshal(body, &reqPayload); err != nil {
-		status = "400"
-		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
-		return
-	}
-
-	for i, msg := range reqPayload.Messages {
-		reqPayload.Messages[i].Content = h.masker.Mask(msg.Content)
-	}
-
-	maskedBody, err := json.Marshal(reqPayload)
+	maskedBody, model, isStream, err := adapter.MaskRequest(body, h.masker)
 	if err != nil {
-		status = "500"
-		http.Error(w, "Failed to marshal request", http.StatusInternalServerError)
+		status = "400"
+		http.Error(w, "Failed to parse or mask request JSON", http.StatusBadRequest)
 		return
 	}
 
-	proxyReq, err := http.NewRequest(r.Method, h.target+r.URL.Path, bytes.NewBuffer(maskedBody))
+	targetURL := adapter.BaseURL() + adapter.TargetPath(r)
+	proxyReq, err := http.NewRequest(r.Method, targetURL, bytes.NewBuffer(maskedBody))
 	if err != nil {
 		status = "500"
 		http.Error(w, "Failed to create proxy request", http.StatusInternalServerError)
@@ -124,9 +93,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxyReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(maskedBody)))
 	proxyReq.Header.Del("Accept-Encoding")
 
-	if h.secureAPIKey != "" {
-		proxyReq.Header.Set("Authorization", "Bearer "+h.secureAPIKey)
-	}
+	adapter.InjectAuth(proxyReq, h.secureKeys)
 
 	client := &http.Client{}
 	resp, err := client.Do(proxyReq)
@@ -139,33 +106,25 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	status = fmt.Sprintf("%d", resp.StatusCode)
 
-	if reqPayload.Stream {
-		h.handleStreamResponse(w, resp)
-		h.dispatchAuditEvent(start, r, reqPayload.Model, maskedBody, nil) // Stream doesn't give usage easily yet
+	if isStream {
+		adapter.HandleStream(w, resp, h.masker)
+		h.dispatchAuditEvent(start, r, model, maskedBody, nil)
 		return
 	}
 
-	respPayload := h.handleNormalResponse(w, resp)
-	h.dispatchAuditEvent(start, r, reqPayload.Model, maskedBody, respPayload)
-}
-
-func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Response) *ChatResponse {
 	respBody, _ := io.ReadAll(resp.Body)
-	var respPayload *ChatResponse
+	var usage *providers.Usage
 
 	if resp.StatusCode == http.StatusOK {
-		var parsed ChatResponse
-		if err := json.Unmarshal(respBody, &parsed); err == nil {
-			respPayload = &parsed
-			for i, choice := range parsed.Choices {
-				parsed.Choices[i].Message.Content = h.masker.Unmask(choice.Message.Content)
-			}
-			unmaskedBody, err := json.Marshal(parsed)
-			if err == nil {
-				respBody = unmaskedBody
-			}
+		unmaskedBody, extractedUsage, err := adapter.UnmaskResponse(respBody, h.masker)
+		if err == nil {
+			respBody = unmaskedBody
+			usage = extractedUsage
+		} else {
+			slog.Error("Failed to unmask response", "error", err)
 		}
 	}
+
 	for k, vv := range resp.Header {
 		for _, v := range vv {
 			w.Header().Add(k, v)
@@ -175,63 +134,10 @@ func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Re
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(respBody)
 
-	return respPayload
+	h.dispatchAuditEvent(start, r, model, maskedBody, usage)
 }
 
-func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Response) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported by client", http.StatusInternalServerError)
-		return
-	}
-
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-
-	reader := bufio.NewReader(resp.Body)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err != io.EOF {
-				slog.Error("Error reading stream", "error", err)
-			}
-			break
-		}
-
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
-			if data == "[DONE]" {
-				fmt.Fprint(w, "data: [DONE]\n\n")
-				flusher.Flush()
-				continue
-			}
-
-			var chunk ChatResponse
-			if err := json.Unmarshal([]byte(data), &chunk); err == nil {
-				for i, choice := range chunk.Choices {
-					if choice.Delta.Content != "" {
-						chunk.Choices[i].Delta.Content = h.masker.Unmask(choice.Delta.Content)
-					}
-				}
-				unmaskedData, err := json.Marshal(chunk)
-				if err == nil {
-					fmt.Fprintf(w, "data: %s\n\n", string(unmaskedData))
-					flusher.Flush()
-				}
-				continue
-			}
-		}
-
-		fmt.Fprint(w, line)
-		flusher.Flush()
-	}
-}
-
-func (h *ProxyHandler) dispatchAuditEvent(start time.Time, r *http.Request, model string, maskedBody []byte, respPayload *ChatResponse) {
+func (h *ProxyHandler) dispatchAuditEvent(start time.Time, r *http.Request, model string, maskedBody []byte, usage *providers.Usage) {
 	if h.auditLogger == nil {
 		return
 	}
@@ -245,10 +151,10 @@ func (h *ProxyHandler) dispatchAuditEvent(start time.Time, r *http.Request, mode
 	piiMasked := len(tokenPattern.FindAllString(string(maskedBody), -1))
 
 	var pTokens, cTokens, tTokens int
-	if respPayload != nil && respPayload.Usage != nil {
-		pTokens = respPayload.Usage.PromptTokens
-		cTokens = respPayload.Usage.CompletionTokens
-		tTokens = respPayload.Usage.TotalTokens
+	if usage != nil {
+		pTokens = usage.PromptTokens
+		cTokens = usage.CompletionTokens
+		tTokens = usage.TotalTokens
 	}
 
 	event := audit.AuditEvent{

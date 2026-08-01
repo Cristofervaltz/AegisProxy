@@ -74,7 +74,7 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
 
 	// Initialize Secrets Manager
-	var secureKey string
+	var secureKeys map[string]string
 	var secretsManager secrets.Manager
 
 	if cfg.VaultAddr != "" {
@@ -85,21 +85,25 @@ func main() {
 			os.Exit(1)
 		}
 		secretsManager = vaultMgr
-	} else if os.Getenv("OPENAI_API_KEY") != "" {
-		slog.Info("Using Environment Variable for secure key storage")
-		secretsManager = secrets.NewEnvManager(os.Getenv("OPENAI_API_KEY"))
+	} else if os.Getenv("OPENAI_API_KEY") != "" || os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("GEMINI_API_KEY") != "" {
+		slog.Info("Using Environment Variables for secure key storage")
+		secretsManager = secrets.NewEnvManager(
+			os.Getenv("OPENAI_API_KEY"),
+			os.Getenv("ANTHROPIC_API_KEY"),
+			os.Getenv("GEMINI_API_KEY"),
+		)
 	}
 
 	if secretsManager != nil {
-		key, err := secretsManager.GetOpenAIKey(context.Background())
+		keys, err := secretsManager.GetKeys(context.Background())
 		if err != nil {
-			slog.Error("Failed to fetch secure API key", "error", err)
+			slog.Error("Failed to fetch secure API keys", "error", err)
 		} else {
-			slog.Info("Successfully fetched secure API key")
-			secureKey = key
+			slog.Info("Successfully fetched secure API keys", "count", len(keys))
+			secureKeys = keys
 		}
 	} else {
-		slog.Info("No secure key storage configured. Will forward client's Authorization header.")
+		slog.Info("No secure key storage configured. Will forward client's Authorization headers if present.")
 	}
 
 	// Initialize Audit Logger
@@ -111,12 +115,12 @@ func main() {
 		slog.Info("Audit logging enabled", "path", "./logs/audit.log")
 	}
 
-	// Initialize the Proxy Handler targeting configured API
-	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI, secureKey, auditLogger)
+	// Initialize the Proxy Handler for Multi-Provider
+	proxyHandler := proxy.NewProxyHandler(masker, secureKeys, auditLogger)
 
 	http.Handle("/", rateLimiter.Middleware(proxyHandler))
 
-	slog.Info("AegisProxy is starting", "port", cfg.Port, "target", cfg.TargetAPI)
+	slog.Info("AegisProxy is starting (Multi-Provider Mode)", "port", cfg.Port)
 
 	if err := http.ListenAndServe(cfg.Port, nil); err != nil {
 		slog.Error("Server failed to start", "error", err)
