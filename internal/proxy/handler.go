@@ -17,15 +17,17 @@ import (
 
 // ProxyHandler intercepts and sanitizes OpenAI API requests
 type ProxyHandler struct {
-	masker *sanitizer.Masker
-	target string
+	masker       *sanitizer.Masker
+	target       string
+	secureAPIKey string
 }
 
 // NewProxyHandler creates a new ProxyHandler
-func NewProxyHandler(m *sanitizer.Masker, target string) *ProxyHandler {
+func NewProxyHandler(m *sanitizer.Masker, target string, secureKey string) *ProxyHandler {
 	return &ProxyHandler{
-		masker: m,
-		target: target,
+		masker:       m,
+		target:       target,
+		secureAPIKey: secureKey,
 	}
 }
 
@@ -112,6 +114,10 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	proxyReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(maskedBody)))
 	proxyReq.Header.Del("Accept-Encoding")
+
+	if h.secureAPIKey != "" {
+		proxyReq.Header.Set("Authorization", "Bearer "+h.secureAPIKey)
+	}
 
 	client := &http.Client{}
 	resp, err := client.Do(proxyReq)

@@ -6,22 +6,28 @@ import (
 )
 
 type Config struct {
-	Port           string
-	TargetAPI      string
-	StoreType      string // "memory" or "redis"
-	RedisAddr      string
-	RateLimitRPS   float64
-	RateLimitBurst int
+	Port            string
+	TargetAPI       string
+	StoreType       string // "memory" or "redis"
+	RedisAddr       string
+	RateLimitRPS    float64
+	RateLimitBurst  int
+	VaultAddr       string
+	VaultToken      string
+	VaultSecretPath string
 }
 
 func LoadConfig() *Config {
 	return &Config{
-		Port:           getEnvOrDefault("PORT", ":8080"),
-		TargetAPI:      getEnvOrDefault("TARGET_API", "https://api.openai.com"),
-		StoreType:      getEnvOrDefault("STORE_TYPE", "memory"),
-		RedisAddr:      getEnvOrDefault("REDIS_ADDR", "localhost:6379"),
-		RateLimitRPS:   getEnvFloatOrDefault("RATE_LIMIT_RPS", 10.0), // 10 requests per second default
-		RateLimitBurst: getEnvIntOrDefault("RATE_LIMIT_BURST", 20),   // burst size of 20
+		Port:            getEnvOrDefault("PORT", ":8080"),
+		TargetAPI:       getEnvOrDefault("TARGET_API", "https://api.openai.com"),
+		StoreType:       getEnvOrDefault("STORE_TYPE", "memory"),
+		RedisAddr:       getEnvOrDefault("REDIS_ADDR", "localhost:6379"),
+		RateLimitRPS:    getEnvFloatOrDefault("RATE_LIMIT_RPS", 10.0), // 10 requests per second default
+		RateLimitBurst:  getEnvIntOrDefault("RATE_LIMIT_BURST", 20),   // burst size of 20
+		VaultAddr:       getEnvOrDefault("VAULT_ADDR", ""),
+		VaultToken:      getEnvOrDefault("VAULT_TOKEN", ""),
+		VaultSecretPath: getEnvOrDefault("VAULT_SECRET_PATH", "secret/data/aegisproxy/openai"),
 	}
 }
 

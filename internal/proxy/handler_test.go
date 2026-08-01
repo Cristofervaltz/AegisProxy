@@ -30,6 +30,11 @@ func TestProxyHandler(t *testing.T) {
 			t.Errorf("Target server did not receive EMAIL token: %s", bodyStr)
 		}
 
+		// Verify Authorization header was injected securely
+		if auth := r.Header.Get("Authorization"); auth != "Bearer super_secure_mock_key" {
+			t.Errorf("Expected injected Authorization header, got: %s", auth)
+		}
+
 		// Send back a mock response mimicking OpenAI
 		mockResp := ChatResponse{
 			Id:      "chatcmpl-123",
@@ -60,7 +65,7 @@ func TestProxyHandler(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	handler := NewProxyHandler(masker, targetServer.URL)
+	handler := NewProxyHandler(masker, targetServer.URL, "super_secure_mock_key")
 
 	reqPayload := ChatRequest{
 		Model: "gpt-3.5-turbo",

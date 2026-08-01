@@ -8,13 +8,26 @@ services:
       - "9090:9090"
     environment:
       - PORT=:8080
-      - TARGET_API=https://api.openai.com
       - STORE_TYPE=redis
       - REDIS_ADDR=redis:6379
+      - TARGET_API=https://api.openai.com
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=root
+      - VAULT_SECRET_PATH=secret/data/aegisproxy/openai
     depends_on:
       - redis
+      - vault
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  vault:
+    image: hashicorp/vault:latest
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "root"
+    cap_add:
+      - IPC_LOCK

@@ -11,6 +11,7 @@ import (
 	"github.com/aegisproxy/core/internal/middleware"
 	"github.com/aegisproxy/core/internal/proxy"
 	"github.com/aegisproxy/core/internal/sanitizer"
+	"github.com/aegisproxy/core/internal/secrets"
 	"github.com/aegisproxy/core/internal/store"
 
 	"context"
@@ -71,8 +72,37 @@ func main() {
 	// Initialize Rate Limiter
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
 
+	// Initialize Secrets Manager
+	var secureKey string
+	var secretsManager secrets.Manager
+
+	if cfg.VaultAddr != "" {
+		slog.Info("Connecting to Vault for secure key storage", "addr", cfg.VaultAddr)
+		vaultMgr, err := secrets.NewVaultManager(cfg.VaultAddr, cfg.VaultToken, cfg.VaultSecretPath)
+		if err != nil {
+			slog.Error("Failed to initialize Vault", "error", err)
+			os.Exit(1)
+		}
+		secretsManager = vaultMgr
+	} else if os.Getenv("OPENAI_API_KEY") != "" {
+		slog.Info("Using Environment Variable for secure key storage")
+		secretsManager = secrets.NewEnvManager(os.Getenv("OPENAI_API_KEY"))
+	}
+
+	if secretsManager != nil {
+		key, err := secretsManager.GetOpenAIKey(context.Background())
+		if err != nil {
+			slog.Error("Failed to fetch secure API key", "error", err)
+		} else {
+			slog.Info("Successfully fetched secure API key")
+			secureKey = key
+		}
+	} else {
+		slog.Info("No secure key storage configured. Will forward client's Authorization header.")
+	}
+
 	// Initialize the Proxy Handler targeting configured API
-	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI)
+	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI, secureKey)
 
 	http.Handle("/", rateLimiter.Middleware(proxyHandler))
 
