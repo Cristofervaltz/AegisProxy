@@ -6,6 +6,7 @@ require (
 	github.com/knights-analytics/hugot v0.7.6
 	github.com/prometheus/client_golang v1.19.1
 	github.com/redis/go-redis/v9 v9.6.1
+	golang.org/x/time v0.15.0
 )
 
 require (

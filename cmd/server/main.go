@@ -8,6 +8,7 @@ import (
 
 	"github.com/aegisproxy/core/internal/admin"
 	"github.com/aegisproxy/core/internal/config"
+	"github.com/aegisproxy/core/internal/middleware"
 	"github.com/aegisproxy/core/internal/proxy"
 	"github.com/aegisproxy/core/internal/sanitizer"
 	"github.com/aegisproxy/core/internal/store"
@@ -67,10 +68,13 @@ func main() {
 	// Initialize the PII Masker
 	masker := sanitizer.NewMasker(stateStore, extractors...)
 
+	// Initialize Rate Limiter
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst)
+
 	// Initialize the Proxy Handler targeting configured API
 	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI)
 
-	http.Handle("/", proxyHandler)
+	http.Handle("/", rateLimiter.Middleware(proxyHandler))
 
 	slog.Info("AegisProxy is starting", "port", cfg.Port, "target", cfg.TargetAPI)
 
