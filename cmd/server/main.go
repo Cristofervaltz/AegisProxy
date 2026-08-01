@@ -11,6 +11,9 @@ import (
 	"github.com/aegisproxy/core/internal/proxy"
 	"github.com/aegisproxy/core/internal/sanitizer"
 	"github.com/aegisproxy/core/internal/store"
+
+	"github.com/knights-analytics/hugot"
+	"context"
 )
 
 func main() {
@@ -30,16 +33,39 @@ func main() {
 		stateStore = store.NewMemoryStore()
 	}
 
-	// Initialize Extractors (Regex + ONNX Stub)
+	// Initialize Extractors
 	regexExt := sanitizer.NewRegexExtractor()
-	onnxExt := sanitizer.NewONNXExtractor("./models/ner_model.onnx")
+	
+	var extractors []sanitizer.Extractor
+	extractors = append(extractors, regexExt)
+
+	modelPath := "./models/distilbert-ner"
+	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+		slog.Info("Downloading NER model from Hugging Face... This might take a while.")
+		os.MkdirAll("./models", 0755)
+		opt := hugot.NewDownloadOptions()
+		_, err := hugot.DownloadModel(context.Background(), "knights-analytics/distilbert-base-uncased-finetuned-ner", modelPath, opt)
+		if err != nil {
+			slog.Error("Failed to download model", "error", err)
+		} else {
+			slog.Info("Model downloaded successfully")
+		}
+	}
+
+	onnxExt, err := sanitizer.NewONNXExtractor(modelPath)
+	if err != nil {
+		slog.Error("Failed to initialize ONNX Extractor. Continuing with Regex only.", "error", err)
+	} else {
+		extractors = append(extractors, onnxExt)
+		defer onnxExt.Close()
+	}
 
 	// Initialize Admin Server (Metrics & UI)
 	adminServer := admin.NewAdminServer(regexExt)
 	go adminServer.Start(":9090")
 
 	// Initialize the PII Masker
-	masker := sanitizer.NewMasker(stateStore, regexExt, onnxExt)
+	masker := sanitizer.NewMasker(stateStore, extractors...)
 
 	// Initialize the Proxy Handler targeting configured API
 	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI)
