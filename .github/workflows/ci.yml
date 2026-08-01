@@ -41,7 +41,10 @@ jobs:
         cache: false
 
     - name: Generate go.sum
-      run: go mod download && go mod tidy
+      run: go mod download
+
+    - name: Check go.mod
+      run: cat go.mod && go version
 
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v3
