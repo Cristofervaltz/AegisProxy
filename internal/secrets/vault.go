@@ -63,7 +63,7 @@ func (v *VaultManager) GetOpenAIKey(ctx context.Context) (string, error) {
 		if fallbackErr != nil || s == nil {
 			return "", fmt.Errorf("failed to read secret from vault: %v (fallback error: %v)", err, fallbackErr)
 		}
-		
+
 		data := s.Data
 		if key, ok := data["api_key"].(string); ok {
 			return key, nil
