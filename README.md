@@ -102,7 +102,7 @@ AegisProxy ships with a built-in administration panel on port `9090`.
 - [x] Streaming Support (SSE)
 - [x] CI/CD Pipeline & Dockerization
 - [x] Observability (Prometheus & slog)
-- [ ] ONNX Runtime Integration (for SLM-based Named Entity Recognition instead of Regex)
+- [x] ONNX Runtime Integration (for SLM-based Named Entity Recognition instead of Regex)
 
 ## 📄 License
 
