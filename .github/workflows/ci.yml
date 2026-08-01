@@ -18,11 +18,10 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.22'
-        cache: true
+        go-version: '1.26'
 
     - name: Download dependencies
-      run: go mod download && go mod tidy
+      run: go mod tidy
 
     - name: Build
       run: go build -v ./...
@@ -38,7 +37,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.22'
+        go-version: '1.26'
         cache: false
 
     - name: Generate go.sum
@@ -49,6 +48,5 @@ jobs:
       env:
         CGO_ENABLED: 0
       with:
-        version: v1.56
+        version: v1.60
         args: --timeout=5m
-        skip-cache: true
