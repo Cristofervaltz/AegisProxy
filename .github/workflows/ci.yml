@@ -50,3 +50,6 @@ jobs:
       with:
         version: v1.60
         args: --timeout=5m
+        skip-cache: true
+        skip-pkg-cache: true
+        skip-build-cache: true
