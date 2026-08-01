@@ -1,6 +1,6 @@
 module github.com/aegisproxy/core
 
-go 1.24
+go 1.26
 
 require (
 	github.com/knights-analytics/hugot v0.7.6

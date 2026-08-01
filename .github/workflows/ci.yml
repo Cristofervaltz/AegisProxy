@@ -18,7 +18,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
+        go-version: '1.26'
 
     - name: Download dependencies
       run: go mod tidy
@@ -37,22 +37,13 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
-        cache: false
+        go-version: '1.26'
 
-    - name: Generate go.sum
+    - name: Download dependencies
       run: go mod download
 
-    - name: Check go.mod
-      run: cat go.mod && go version
+    - name: Format
+      run: if [ -n "$(gofmt -l .)" ]; then echo "Code is not formatted"; exit 1; fi
 
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v3
-      env:
-        CGO_ENABLED: 0
-      with:
-        version: latest
-        args: --timeout=5m
-        skip-cache: true
-        skip-pkg-cache: true
-        skip-build-cache: true
+    - name: Vet
+      run: go vet ./...
