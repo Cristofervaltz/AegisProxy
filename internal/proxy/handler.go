@@ -8,9 +8,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/aegisproxy/core/internal/audit"
 	"github.com/aegisproxy/core/internal/metrics"
 	"github.com/aegisproxy/core/internal/sanitizer"
 )
@@ -20,14 +22,16 @@ type ProxyHandler struct {
 	masker       *sanitizer.Masker
 	target       string
 	secureAPIKey string
+	auditLogger  audit.Logger
 }
 
 // NewProxyHandler creates a new ProxyHandler
-func NewProxyHandler(m *sanitizer.Masker, target string, secureKey string) *ProxyHandler {
+func NewProxyHandler(m *sanitizer.Masker, target string, secureKey string, auditLogger audit.Logger) *ProxyHandler {
 	return &ProxyHandler{
 		masker:       m,
 		target:       target,
 		secureAPIKey: secureKey,
+		auditLogger:  auditLogger,
 	}
 }
 
@@ -56,6 +60,11 @@ type ChatResponse struct {
 		Delta        ChatMessage `json:"delta,omitempty"`
 		FinishReason string      `json:"finish_reason,omitempty"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
 }
 
 // ServeHTTP implements the http.Handler interface
@@ -132,21 +141,26 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if reqPayload.Stream {
 		h.handleStreamResponse(w, resp)
+		h.dispatchAuditEvent(start, r, reqPayload.Model, maskedBody, nil) // Stream doesn't give usage easily yet
 		return
 	}
 
-	h.handleNormalResponse(w, resp)
+	respPayload := h.handleNormalResponse(w, resp)
+	h.dispatchAuditEvent(start, r, reqPayload.Model, maskedBody, respPayload)
 }
 
-func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Response) {
+func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Response) *ChatResponse {
 	respBody, _ := io.ReadAll(resp.Body)
+	var respPayload *ChatResponse
+
 	if resp.StatusCode == http.StatusOK {
-		var respPayload ChatResponse
-		if err := json.Unmarshal(respBody, &respPayload); err == nil {
-			for i, choice := range respPayload.Choices {
-				respPayload.Choices[i].Message.Content = h.masker.Unmask(choice.Message.Content)
+		var parsed ChatResponse
+		if err := json.Unmarshal(respBody, &parsed); err == nil {
+			respPayload = &parsed
+			for i, choice := range parsed.Choices {
+				parsed.Choices[i].Message.Content = h.masker.Unmask(choice.Message.Content)
 			}
-			unmaskedBody, err := json.Marshal(respPayload)
+			unmaskedBody, err := json.Marshal(parsed)
 			if err == nil {
 				respBody = unmaskedBody
 			}
@@ -160,6 +174,8 @@ func (h *ProxyHandler) handleNormalResponse(w http.ResponseWriter, resp *http.Re
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(respBody)))
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(respBody)
+
+	return respPayload
 }
 
 func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Response) {
@@ -213,4 +229,42 @@ func (h *ProxyHandler) handleStreamResponse(w http.ResponseWriter, resp *http.Re
 		fmt.Fprint(w, line)
 		flusher.Flush()
 	}
+}
+
+func (h *ProxyHandler) dispatchAuditEvent(start time.Time, r *http.Request, model string, maskedBody []byte, respPayload *ChatResponse) {
+	if h.auditLogger == nil {
+		return
+	}
+
+	ip := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = strings.Split(forwarded, ",")[0]
+	}
+
+	tokenPattern := regexp.MustCompile(`\[[A-Z_]+_\d+\]`)
+	piiMasked := len(tokenPattern.FindAllString(string(maskedBody), -1))
+
+	var pTokens, cTokens, tTokens int
+	if respPayload != nil && respPayload.Usage != nil {
+		pTokens = respPayload.Usage.PromptTokens
+		cTokens = respPayload.Usage.CompletionTokens
+		tTokens = respPayload.Usage.TotalTokens
+	}
+
+	event := audit.AuditEvent{
+		Timestamp:        start,
+		ClientIP:         ip,
+		Model:            model,
+		DurationMs:       time.Since(start).Milliseconds(),
+		PromptTokens:     pTokens,
+		CompletionTokens: cTokens,
+		TotalTokens:      tTokens,
+		PIITokensMasked:  piiMasked,
+	}
+
+	go func() {
+		if err := h.auditLogger.LogEvent(event); err != nil {
+			slog.Error("Failed to write audit log", "error", err)
+		}
+	}()
 }

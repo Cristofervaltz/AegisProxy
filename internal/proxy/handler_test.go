@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aegisproxy/core/internal/audit"
 	"github.com/aegisproxy/core/internal/sanitizer"
 	"github.com/aegisproxy/core/internal/store"
 )
@@ -65,7 +67,8 @@ func TestProxyHandler(t *testing.T) {
 	}))
 	defer targetServer.Close()
 
-	handler := NewProxyHandler(masker, targetServer.URL, "super_secure_mock_key")
+	mockLogger := &MockAuditLogger{}
+	handler := NewProxyHandler(masker, targetServer.URL, "super_secure_mock_key", mockLogger)
 
 	reqPayload := ChatRequest{
 		Model: "gpt-3.5-turbo",
@@ -96,6 +99,18 @@ func TestProxyHandler(t *testing.T) {
 	if !strings.Contains(finalContent, "john@doe.com") {
 		t.Errorf("Expected proxy to unmask email in response, got: %s", finalContent)
 	}
+
+	// Wait a tiny bit for the async audit logger goroutine
+	time.Sleep(10 * time.Millisecond)
+	if mockLogger.LastEvent == nil {
+		t.Fatalf("Expected audit event to be logged, but got nil")
+	}
+	if mockLogger.LastEvent.PIITokensMasked != 1 {
+		t.Errorf("Expected 1 PII token masked in audit log, got %d", mockLogger.LastEvent.PIITokensMasked)
+	}
+	if mockLogger.LastEvent.Model != "gpt-3.5-turbo" {
+		t.Errorf("Expected model gpt-3.5-turbo in audit log, got %s", mockLogger.LastEvent.Model)
+	}
 }
 
 // Helper to extract the token generated in the test
@@ -104,4 +119,14 @@ func extractToken(body string) string {
 	_ = json.Unmarshal([]byte(body), &req)
 	words := strings.Split(req.Messages[0].Content, " ")
 	return words[len(words)-1] // It's at the end "Hi, my email is [EMAIL_1]."
+}
+
+// MockAuditLogger captures the last logged event for testing
+type MockAuditLogger struct {
+	LastEvent *audit.AuditEvent
+}
+
+func (m *MockAuditLogger) LogEvent(event audit.AuditEvent) error {
+	m.LastEvent = &event
+	return nil
 }

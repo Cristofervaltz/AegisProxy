@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aegisproxy/core/internal/admin"
+	"github.com/aegisproxy/core/internal/audit"
 	"github.com/aegisproxy/core/internal/config"
 	"github.com/aegisproxy/core/internal/middleware"
 	"github.com/aegisproxy/core/internal/proxy"
@@ -101,8 +102,17 @@ func main() {
 		slog.Info("No secure key storage configured. Will forward client's Authorization header.")
 	}
 
+	// Initialize Audit Logger
+	auditLogger, err := audit.NewFileAuditLogger("./logs/audit.log")
+	if err != nil {
+		slog.Error("Failed to initialize audit logger", "error", err)
+	} else {
+		defer auditLogger.Close()
+		slog.Info("Audit logging enabled", "path", "./logs/audit.log")
+	}
+
 	// Initialize the Proxy Handler targeting configured API
-	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI, secureKey)
+	proxyHandler := proxy.NewProxyHandler(masker, cfg.TargetAPI, secureKey, auditLogger)
 
 	http.Handle("/", rateLimiter.Middleware(proxyHandler))
 
